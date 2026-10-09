@@ -27,6 +27,7 @@ Useful flags:
 | `--model` | first from `/v1/models` | model name |
 | `--prompt` / `--prompt-file` | a 5-paragraph transformer explainer | the prompt to benchmark |
 | `--max-tokens` | `128` | completion budget per request |
+| `--min-p` | off | sampling param: drop tokens below this fraction of the top token's probability (0–1) |
 | `--parallelism 1 4 8 ...` | `1 2 4 8 16` | concurrency levels to test |
 | `--reps` | `2` | rounds per level (more = steadier numbers) |
 | `--timeout` | `300` | per-request HTTP timeout (s) |

@@ -50,20 +50,23 @@ class ReqResult:
         }
 
 
-def fire_one(base_url, model, prompt, max_tokens, timeout):
+def fire_one(base_url, model, prompt, max_tokens, timeout, min_p=None):
     """Send one chat-completion request; return a ReqResult with timing + usage."""
     result = ReqResult()
     t0 = time.perf_counter()
     try:
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": max_tokens,
+            "temperature": 0,
+            "stream": False,
+        }
+        if min_p is not None:
+            payload["min_p"] = min_p
         r = requests.post(
             f"{base_url}/v1/chat/completions",
-            json={
-                "model": model,
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": max_tokens,
-                "temperature": 0,
-                "stream": False,
-            },
+            json=payload,
             timeout=timeout,
         )
         result.latency = time.perf_counter() - t0
@@ -105,7 +108,7 @@ def percentile(sorted_vals, p):
     return sorted_vals[f] + (sorted_vals[c] - sorted_vals[f]) * (k - f)
 
 
-def run_level(base_url, model, prompt, max_tokens, parallelism, reps, timeout):
+def run_level(base_url, model, prompt, max_tokens, parallelism, reps, timeout, min_p=None):
     """Run `reps` rounds of `parallelism` concurrent identical requests."""
     all_results = []
     round_walls = []
@@ -113,7 +116,7 @@ def run_level(base_url, model, prompt, max_tokens, parallelism, reps, timeout):
         t0 = time.perf_counter()
         with cf.ThreadPoolExecutor(max_workers=parallelism) as ex:
             futs = [
-                ex.submit(fire_one, base_url, model, prompt, max_tokens, timeout)
+                ex.submit(fire_one, base_url, model, prompt, max_tokens, timeout, min_p)
                 for _ in range(parallelism)
             ]
             all_results.extend(f.result() for f in futs)
@@ -167,6 +170,9 @@ def main():
     ap.add_argument("--reps", type=int, default=2,
                     help="Rounds per parallelism level (default: %(default)s)")
     ap.add_argument("--timeout", type=float, default=300.0)
+    ap.add_argument("--min-p", type=float, default=None, metavar="F",
+                    help="min_p sampling param (fraction of the top token's probability, 0-1); "
+                         "off by default")
     ap.add_argument("--json", action="store_true", help="Also print full results as JSON")
     args = ap.parse_args()
 
@@ -188,11 +194,14 @@ def main():
     print(f"Prompt:   {prompt[:60]!r}{'...' if len(prompt) > 60 else ''} "
           f"({len(prompt)} chars)")
     print(f"Max tokens per completion: {args.max_tokens}")
+    if args.min_p is not None:
+        print(f"min_p:    {args.min_p}")
     print(f"Levels:   {levels}, reps: {args.reps}\n")
 
     results = []
     for lvl in levels:
-        res = run_level(base_url, model, prompt, args.max_tokens, lvl, args.reps, args.timeout)
+        res = run_level(base_url, model, prompt, args.max_tokens, lvl, args.reps, args.timeout,
+                        min_p=args.min_p)
         results.append(res)
         lat = res["latency_s"]
         print(f"--- parallelism {lvl} ---")
